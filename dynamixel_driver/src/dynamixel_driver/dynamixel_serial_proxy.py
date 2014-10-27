@@ -60,6 +60,7 @@ from diagnostic_msgs.msg import DiagnosticArray
 from diagnostic_msgs.msg import DiagnosticStatus
 from diagnostic_msgs.msg import KeyValue
 
+from dynamixel_msgs.msg import MotorError
 from dynamixel_msgs.msg import MotorState
 from dynamixel_msgs.msg import MotorStateList
 
@@ -85,12 +86,13 @@ class SerialProxy():
         self.error_level_temp = error_level_temp
         self.warn_level_temp = warn_level_temp
         self.readback_echo = readback_echo
-        
+
         self.actual_rate = update_rate
         self.error_counts = {'non_fatal': 0, 'checksum': 0, 'dropped': 0}
         self.current_state = MotorStateList()
         self.num_ping_retries = 5
-        
+
+        self.error_pub = rospy.Publisher('dynamixel_motor_errors', MotorError, queue_size=3)
         self.motor_states_pub = rospy.Publisher('motor_states/%s' % self.port_namespace, MotorStateList, queue_size=None)
         self.diagnostics_pub = rospy.Publisher('/diagnostics', DiagnosticArray, queue_size=None)
 
@@ -210,37 +212,45 @@ class SerialProxy():
                 
         rospy.loginfo('%s, initialization complete.' % status_str[:-2])
 
+    def __process_motor_feedback(self, motor_id):
+        try:
+            state = self.dxl_io.get_feedback(motor_id)
+            if state:
+                # motor_states.append(MotorState(**state))
+                if dynamixel_io.exception:
+                    raise dynamixel_io.exception
+                return MotorState(**state)
+        except dynamixel_io.FatalErrorCodeError as fece:
+            rospy.logerr(fece)
+            me = MotorError()
+            me.error_type = "FatalErrorCodeError"
+            me.error_message = fece.message
+            me.extra_info = fece.message.split(' ')[3][1:]
+            self.error_pub.publish(me)
+        except dynamixel_io.NonfatalErrorCodeError as nfece:
+            self.error_counts['non_fatal'] += 1
+            rospy.logdebug(nfece)
+        except dynamixel_io.ChecksumError as cse:
+            self.error_counts['checksum'] += 1
+            rospy.logdebug(cse)
+        except dynamixel_io.DroppedPacketError as dpe:
+            self.error_counts['dropped'] += 1
+            rospy.logdebug(dpe.message)
+        except OSError as ose:
+            if ose.errno != errno.EAGAIN:
+                rospy.logfatal(errno.errorcode[ose.errno])
+                rospy.signal_shutdown(errno.errorcode[ose.errno])
+
     def __update_motor_states(self):
         num_events = 50
-        rates = deque([float(self.update_rate)]*num_events, maxlen=num_events)
+        rates = deque([float(self.update_rate)] * num_events, maxlen=num_events)
         last_time = rospy.Time.now()
-        
+
         rate = rospy.Rate(self.update_rate)
         while not rospy.is_shutdown() and self.running:
-            # get current state of all motors and publish to motor_states topic
-            motor_states = []
-            for motor_id in self.motors:
-                try:
-                    state = self.dxl_io.get_feedback(motor_id)
-                    if state:
-                        motor_states.append(MotorState(**state))
-                        if dynamixel_io.exception: raise dynamixel_io.exception
-                except dynamixel_io.FatalErrorCodeError, fece:
-                    rospy.logerr(fece)
-                except dynamixel_io.NonfatalErrorCodeError, nfece:
-                    self.error_counts['non_fatal'] += 1
-                    rospy.logdebug(nfece)
-                except dynamixel_io.ChecksumError, cse:
-                    self.error_counts['checksum'] += 1
-                    rospy.logdebug(cse)
-                except dynamixel_io.DroppedPacketError, dpe:
-                    self.error_counts['dropped'] += 1
-                    rospy.logdebug(dpe.message)
-                except OSError, ose:
-                    if ose.errno != errno.EAGAIN:
-                        rospy.logfatal(errno.errorcode[ose.errno])
-                        rospy.signal_shutdown(errno.errorcode[ose.errno])
-                        
+            motor_states = [self.__process_motor_feedback(motor_id)
+                            for motor_id in self.motors]
+
             if motor_states:
                 msl = MotorStateList()
                 msl.motor_states = motor_states
