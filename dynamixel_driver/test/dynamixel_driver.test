@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <test test-name="test_dynamixel_serial_proxy"
+        pkg="dynamixel_driver"
+        type="test_dynamixel_serial_proxy.py"
+        time-limit="10.0">
+  </test>
+</launch>

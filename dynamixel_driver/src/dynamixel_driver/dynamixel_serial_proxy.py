@@ -64,6 +64,7 @@ from dynamixel_msgs.msg import MotorError
 from dynamixel_msgs.msg import MotorState
 from dynamixel_msgs.msg import MotorStateList
 
+
 class SerialProxy():
     def __init__(self,
                  port_name='/dev/ttyUSB0',
@@ -103,7 +104,7 @@ class SerialProxy():
         except dynamixel_io.SerialOpenError, e:
             rospy.logfatal(e.message)
             sys.exit(1)
-            
+
         self.running = True
         if self.update_rate > 0: Thread(target=self.__update_motor_states).start()
         if self.diagnostics_rate > 0: Thread(target=self.__publish_diagnostic_information).start()
@@ -119,22 +120,22 @@ class SerialProxy():
         angles = self.dxl_io.get_angle_limits(motor_id)
         voltage = self.dxl_io.get_voltage(motor_id)
         voltages = self.dxl_io.get_voltage_limits(motor_id)
-        
+
         rospy.set_param('dynamixel/%s/%d/model_number' %(self.port_namespace, motor_id), model_number)
         rospy.set_param('dynamixel/%s/%d/model_name' %(self.port_namespace, motor_id), DXL_MODEL_TO_PARAMS[model_number]['name'])
         rospy.set_param('dynamixel/%s/%d/min_angle' %(self.port_namespace, motor_id), angles['min'])
         rospy.set_param('dynamixel/%s/%d/max_angle' %(self.port_namespace, motor_id), angles['max'])
-        
+
         torque_per_volt = DXL_MODEL_TO_PARAMS[model_number]['torque_per_volt']
         rospy.set_param('dynamixel/%s/%d/torque_per_volt' %(self.port_namespace, motor_id), torque_per_volt)
         rospy.set_param('dynamixel/%s/%d/max_torque' %(self.port_namespace, motor_id), torque_per_volt * voltage)
-        
+
         velocity_per_volt = DXL_MODEL_TO_PARAMS[model_number]['velocity_per_volt']
         rpm_per_tick = DXL_MODEL_TO_PARAMS[model_number]['rpm_per_tick']
         rospy.set_param('dynamixel/%s/%d/velocity_per_volt' %(self.port_namespace, motor_id), velocity_per_volt)
         rospy.set_param('dynamixel/%s/%d/max_velocity' %(self.port_namespace, motor_id), velocity_per_volt * voltage)
         rospy.set_param('dynamixel/%s/%d/radians_second_per_encoder_tick' %(self.port_namespace, motor_id), rpm_per_tick * RPM_TO_RADSEC)
-        
+
         encoder_resolution = DXL_MODEL_TO_PARAMS[model_number]['encoder_resolution']
         range_degrees = DXL_MODEL_TO_PARAMS[model_number]['range_degrees']
         range_radians = math.radians(range_degrees)
@@ -145,7 +146,7 @@ class SerialProxy():
         rospy.set_param('dynamixel/%s/%d/encoder_ticks_per_radian' %(self.port_namespace, motor_id), encoder_resolution / range_radians)
         rospy.set_param('dynamixel/%s/%d/degrees_per_encoder_tick' %(self.port_namespace, motor_id), range_degrees / encoder_resolution)
         rospy.set_param('dynamixel/%s/%d/radians_per_encoder_tick' %(self.port_namespace, motor_id), range_radians / encoder_resolution)
-        
+
         # keep some parameters around for diagnostics
         self.motor_static_info[motor_id] = {}
         self.motor_static_info[motor_id]['model'] = DXL_MODEL_TO_PARAMS[model_number]['name']
@@ -160,7 +161,7 @@ class SerialProxy():
         rospy.loginfo('%s: Pinging motor IDs %d through %d...' % (self.port_namespace, self.min_motor_id, self.max_motor_id))
         self.motors = []
         self.motor_static_info = {}
-        
+
         for motor_id in range(self.min_motor_id, self.max_motor_id + 1):
             for trial in range(self.num_ping_retries):
                 try:
@@ -168,17 +169,17 @@ class SerialProxy():
                 except Exception as ex:
                     rospy.logerr('Exception thrown while pinging motor %d - %s' % (motor_id, ex))
                     continue
-                    
+
                 if result:
                     self.motors.append(motor_id)
                     break
-                    
+
         if not self.motors:
             rospy.logfatal('%s: No motors found.' % self.port_namespace)
             sys.exit(1)
-            
+
         counts = defaultdict(int)
-        
+
         to_delete_if_error = []
         for motor_id in self.motors:
             for trial in range(self.num_ping_retries):
@@ -189,27 +190,27 @@ class SerialProxy():
                     rospy.logerr('Exception thrown while getting attributes for motor %d - %s' % (motor_id, ex))
                     if trial == self.num_ping_retries - 1: to_delete_if_error.append(motor_id)
                     continue
-                    
+
                 counts[model_number] += 1
                 break
-                
+
         for motor_id in to_delete_if_error:
             self.motors.remove(motor_id)
-            
+
         rospy.set_param('dynamixel/%s/connected_ids' % self.port_namespace, self.motors)
-        
+
         status_str = '%s: Found %d motors - ' % (self.port_namespace, len(self.motors))
         for model_number,count in counts.items():
             if count:
                 model_name = DXL_MODEL_TO_PARAMS[model_number]['name']
                 status_str += '%d %s [' % (count, model_name)
-                
+
                 for motor_id in self.motors:
                     if self.motor_static_info[motor_id]['model'] == model_name:
                         status_str += '%d, ' % motor_id
-                        
+
                 status_str = status_str[:-2] + '], '
-                
+
         rospy.loginfo('%s, initialization complete.' % status_str[:-2])
 
     def __process_motor_feedback(self, motor_id):
