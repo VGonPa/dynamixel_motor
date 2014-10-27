@@ -222,10 +222,9 @@ class SerialProxy():
                 return MotorState(**state)
         except dynamixel_io.FatalErrorCodeError as fece:
             rospy.logerr(fece)
-            me = MotorError()
-            me.error_type = "FatalErrorCodeError"
-            me.error_message = fece.message
-            me.extra_info = fece.message.split(' ')[3][1:]
+            me = MotorError(error_type="FatalErrorCodeError",
+                            error_message=fece.message,
+                            extra_info=fece.message.split(' ')[3][1:])
             self.error_pub.publish(me)
         except dynamixel_io.NonfatalErrorCodeError as nfece:
             self.error_counts['non_fatal'] += 1
